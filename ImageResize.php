@@ -26,6 +26,11 @@ class ImageResize extends AbstractPicoPlugin
     private $quality;
 
     /**
+     * @var boolean
+     */
+    public $useImagick = false;
+
+    /**
      * Triggered after Pico has read its configuration
      *
      * @see Pico::getConfig()
@@ -59,8 +64,10 @@ class ImageResize extends AbstractPicoPlugin
      */
     public function onTwigRegistered(Twig_Environment &$twig)
     {
-        if (!extension_loaded('imagick'))
-            exit('PHP extension "imagick" is not installed, or not enabled in php.ini');
+        if (extension_loaded('imagick'))
+            $this->useImagick = true;
+        elseif (!extension_loaded('gd'))
+            exit('PHP extension "imagick" or "gd" is not installed, or not enabled in php.ini');
 
         # TODO: support GD as well
 
@@ -95,16 +102,24 @@ class ImageResize extends AbstractPicoPlugin
             return $newFile;
 
         // load file
-        try {
-            $image = new Imagick($file);
-        } catch (ImagickException $e) {
-            error_log($e);
-            return $file;
+        if ($this->useImagick) {
+            try {
+                $image = new Imagick($file);
+                $originalWidth = $image->getImageWidth();
+                $originalHeight = $image->getImageHeight();
+                $mime = $image->getImageMimeType();
+            } catch (ImagickException $e) {
+                error_log($e);
+                return $file;
+            }
+        } else {
+            $dimensions = getimagesize($file);
+            $originalWidth = $dimensions[0];
+            $originalHeight = $dimensions[1];
+            $mime = $dimensions['mime'];
         }
 
         // calculate the final width and height (keep ratio)
-        $originalWidth = $image->getImageWidth();
-        $originalHeight = $image->getImageHeight();
         $widthRatio = $originalWidth / ($width ?: 1);
         $heightRatio = $originalHeight / ($height ?: 1);
         if ($widthRatio < 1 || $heightRatio < 1) {
@@ -121,9 +136,20 @@ class ImageResize extends AbstractPicoPlugin
         // resize and save
         if (!file_exists(pathinfo($newFile, PATHINFO_DIRNAME)))
             mkdir(pathinfo($newFile, PATHINFO_DIRNAME));
-        $image->setImageCompressionQuality($this->quality);
-        $image->thumbnailImage($resizedWidth, $resizedHeight);
-        $image->writeImage($newFile);
+
+        if ($this->useImagick) {
+            $image->setImageCompressionQuality($this->quality);
+            $image->thumbnailImage($resizedWidth, $resizedHeight);
+            $image->writeImage($newFile);
+        } else {
+            $resource = fopen($file, 'r');
+            $newResource = imagescale($resource, $resizedWidth, $resizedHeight);
+            if ($mime == 'image/png') {
+                imagepng($newResource, $newFile);
+            } else {
+                imagejpeg($newResource, $newFile);
+            }
+        }
 
         return $newFile;
     }
