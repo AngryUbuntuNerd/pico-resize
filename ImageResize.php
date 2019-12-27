@@ -26,6 +26,11 @@ class ImageResize extends AbstractPicoPlugin
     private $quality;
 
     /**
+     * @var boolean
+     */
+    private $useImagick = false;
+
+    /**
      * Triggered after Pico has read its configuration
      *
      * @see Pico::getConfig()
@@ -59,10 +64,10 @@ class ImageResize extends AbstractPicoPlugin
      */
     public function onTwigRegistered(Twig_Environment &$twig)
     {
-        if (!extension_loaded('imagick'))
-            exit('PHP extension "imagick" is not installed, or not enabled in php.ini');
-
-        # TODO: support GD as well
+        if (extension_loaded('imagick'))
+            $this->useImagick = true;
+        elseif (!extension_loaded('gd'))
+            exit('PHP extension "imagick" or "gd" is not installed, or not enabled in php.ini');
 
         $twig->addFunction(new Twig_SimpleFunction('resize', array($this, 'resize')));
     }
@@ -94,17 +99,12 @@ class ImageResize extends AbstractPicoPlugin
         if (file_exists($newFile))
             return $newFile;
 
-        // load file
-        try {
-            $image = new Imagick($file);
-        } catch (ImagickException $e) {
-            error_log($e);
-            return $file;
-        }
+        // load file dimensions
+        $dimensions = getimagesize($file);
+        $originalWidth = $dimensions[0];
+        $originalHeight = $dimensions[1];
 
         // calculate the final width and height (keep ratio)
-        $originalWidth = $image->getImageWidth();
-        $originalHeight = $image->getImageHeight();
         $widthRatio = $originalWidth / ($width ?: 1);
         $heightRatio = $originalHeight / ($height ?: 1);
         if ($widthRatio < 1 || $heightRatio < 1) {
@@ -118,12 +118,21 @@ class ImageResize extends AbstractPicoPlugin
             $resizedHeight = $height;
         }
 
-        // resize and save
+        // make sure folder exists
         if (!file_exists(pathinfo($newFile, PATHINFO_DIRNAME)))
             mkdir(pathinfo($newFile, PATHINFO_DIRNAME));
-        $image->setImageCompressionQuality($this->quality);
-        $image->thumbnailImage($resizedWidth, $resizedHeight);
-        $image->writeImage($newFile);
+
+        // resize and save
+        if ($this->useImagick) {
+            $image = new Imagick($file);
+            $image->setImageCompressionQuality($this->quality);
+            $image->thumbnailImage($resizedWidth, $resizedHeight);
+            $image->writeImage($newFile);
+        } else {
+            $image = imagecreatefromstring(file_get_contents($file));
+            $newResource = imagescale($image, $resizedWidth, $resizedHeight);
+            imagejpeg($newResource, $newFile, $this->quality);
+        }
 
         return $newFile;
     }
