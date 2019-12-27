@@ -5,10 +5,17 @@ Use this plugin when having big, original-sized images that you want to automati
 
 # Requirements
 
-ImageMagick needs to be installed, and the php extension `imagick` is required to run this plugin. Do not forget to activate `imagick` in php.ini by having a line like:
+Either ImageMagick or GD needs to be installed, and the respective PHP extension `imagick` or `gd` is required
+to run this plugin. Do not forget to activate in php.ini by having a line like:
 
 ``` ini
 extension=imagick
+```
+
+or
+
+``` ini
+extension=gd
 ```
 
 # Installation / Configuration

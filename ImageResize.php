@@ -28,7 +28,7 @@ class ImageResize extends AbstractPicoPlugin
     /**
      * @var boolean
      */
-    public $useImagick = false;
+    private $useImagick = false;
 
     /**
      * Triggered after Pico has read its configuration
@@ -69,8 +69,6 @@ class ImageResize extends AbstractPicoPlugin
         elseif (!extension_loaded('gd'))
             exit('PHP extension "imagick" or "gd" is not installed, or not enabled in php.ini');
 
-        # TODO: support GD as well
-
         $twig->addFunction(new Twig_SimpleFunction('resize', array($this, 'resize')));
     }
 
@@ -101,23 +99,10 @@ class ImageResize extends AbstractPicoPlugin
         if (file_exists($newFile))
             return $newFile;
 
-        // load file
-        if ($this->useImagick) {
-            try {
-                $image = new Imagick($file);
-                $originalWidth = $image->getImageWidth();
-                $originalHeight = $image->getImageHeight();
-                $mime = $image->getImageMimeType();
-            } catch (ImagickException $e) {
-                error_log($e);
-                return $file;
-            }
-        } else {
-            $dimensions = getimagesize($file);
-            $originalWidth = $dimensions[0];
-            $originalHeight = $dimensions[1];
-            $mime = $dimensions['mime'];
-        }
+        // load file dimensions
+        $dimensions = getimagesize($file);
+        $originalWidth = $dimensions[0];
+        $originalHeight = $dimensions[1];
 
         // calculate the final width and height (keep ratio)
         $widthRatio = $originalWidth / ($width ?: 1);
@@ -133,22 +118,20 @@ class ImageResize extends AbstractPicoPlugin
             $resizedHeight = $height;
         }
 
-        // resize and save
+        // make sure folder exists
         if (!file_exists(pathinfo($newFile, PATHINFO_DIRNAME)))
             mkdir(pathinfo($newFile, PATHINFO_DIRNAME));
 
+        // resize and save
         if ($this->useImagick) {
+            $image = new Imagick($file);
             $image->setImageCompressionQuality($this->quality);
             $image->thumbnailImage($resizedWidth, $resizedHeight);
             $image->writeImage($newFile);
         } else {
-            $resource = fopen($file, 'r');
-            $newResource = imagescale($resource, $resizedWidth, $resizedHeight);
-            if ($mime == 'image/png') {
-                imagepng($newResource, $newFile);
-            } else {
-                imagejpeg($newResource, $newFile);
-            }
+            $image = imagecreatefromstring(file_get_contents($file));
+            $newResource = imagescale($image, $resizedWidth, $resizedHeight);
+            imagejpeg($newResource, $newFile, $this->quality);
         }
 
         return $newFile;
